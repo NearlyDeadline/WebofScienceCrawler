@@ -1,0 +1,4 @@
+.vscode
+output/*
+input/error.txt
+__pycache__
