@@ -1,7 +1,7 @@
 '''
 Date: 2021-06-13 22:58:40
 LastEditors: Mike
-LastEditTime: 2021-06-17 19:55:40
+LastEditTime: 2021-06-23 17:23:03
 FilePath: \PaperCrawler\papercrawler\papercrawler\spiders\wosspider.py
 '''
 import scrapy
@@ -18,6 +18,7 @@ class WosAdvancedQuerySpiderSpider(scrapy.Spider):
     allowed_domains = ['webofknowledge.com']
     start_urls = ['http://www.webofknowledge.com/']
     timestamp = str(time.strftime('%Y-%m-%d-%H.%M.%S',time.localtime(time.time())))
+    end_year = time.strftime('%Y')
 
     #提取URL中的SID和QID所需要的正则表达式
     sid_pattern = r'SID=(\w+)&'
@@ -28,29 +29,30 @@ class WosAdvancedQuerySpiderSpider(scrapy.Spider):
     db_list = ['SCI', 'SSCI', 'AHCI', 'ISTP', 'ESCI', 'CCR', 'IC']
 
     output_path_prefix = ''
+    error_log_file_path = './wosspider_error_log.txt'
 
-    sortBy = "RS.D;PY.D;AU.A;SO.A;VL.D;PG.A" # 排序方式，相关性第一
+    sort_by = "RS.D;PY.D;AU.A;SO.A;VL.D;PG.A" # 排序方式，相关性第一
 
-    def __init__(self, queryFilePath = "", output_path = '../output', document_type = "", output_format = 'fieldtagged', *args, **kwargs):
+    def __init__(self, query_file_path: str, output_dir: str, document_type: str, output_format: str, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.query = [] # 检索式集合
-        self.output_path_prefix = output_path
+        self.output_path_prefix = output_dir
         self.document_type = document_type # 目标文献类型
         self.output_format = output_format # 导出文献格式
         self.sid = None
 
-        if not queryFilePath:
+        if not query_file_path:
             print('请指定检索式文件路径')
             sys.exit(-1)
-        
-        with open(queryFilePath) as queryFile:
-            for line in queryFile.readlines():
+            
+        with open(query_file_path) as query_file:
+            for line in query_file.readlines():
                 line = line.strip('\n')
                 line = line[0:-1] # 把最后的.去掉
                 if line is not None:
                     self.query.append('TI=(' + line + ')') # 加个括号，防止题目内的and等词语被视为布尔操作符
-            
-        if output_path is None:
+        
+        if output_dir is None:
             print('请指定有效的输出路径')
             sys.exit(-1)
 
@@ -62,7 +64,6 @@ class WosAdvancedQuerySpiderSpider(scrapy.Spider):
         :return:
         """
 
-        #获取SID
         pattern = re.compile(self.sid_pattern)
         result = re.search(pattern, response.url)
         if result is not None:
@@ -100,11 +101,11 @@ class WosAdvancedQuerySpiderSpider(scrapy.Spider):
                 "period": "Range Selection",
                 "range": "ALL",
                 "startYear": "1900",
-                "endYear": time.strftime('%Y'),
+                "endYear": self.end_year,
                 "editions": self.db_list,
                 "update_back2search_link_param": "yes",
                 "ss_query_language": "",
-                "rs_sort_by": self.sortBy,
+                "rs_sort_by": self.sort_by,
             }
 
             #将这一个高级搜索请求yield给parse_result_entry，内容为检索历史记录，包含检索结果的入口
@@ -112,7 +113,6 @@ class WosAdvancedQuerySpiderSpider(scrapy.Spider):
             yield FormRequest(adv_search_url, method='POST', formdata=query_form, dont_filter=True,
                             callback=self.parse_result_entry,
                             meta={'sid': self.sid, 'query': q})
-
 
     def parse_result_entry(self, response):
         """
@@ -152,7 +152,7 @@ class WosAdvancedQuerySpiderSpider(scrapy.Spider):
         query = response.meta['query']
         qid = response.meta['qid']
 
-        #爬第一篇，如果一篇都没有，或者第一篇名字对不上，就啥也不下载
+        # 爬第一篇
         start = 1
         end = 1
         paper_num = 1
@@ -170,7 +170,7 @@ class WosAdvancedQuerySpiderSpider(scrapy.Spider):
             "search_mode": "AdvancedSearch",
             "locale": "en_US",
             "view_name": "WOS-summary",
-            "sortBy": self.sortBy,
+            "sortBy": self.sort_by,
             "mode": "OpenOutputService",
             "qid": str(qid),
             "SID": str(sid),
@@ -211,12 +211,29 @@ class WosAdvancedQuerySpiderSpider(scrapy.Spider):
 
         text = response.text
 
-        # WoS的bibtex格式不规范，需要特别处理一下
-        if self.output_format == 'bibtex':
-            text = text.replace('Early Access Date', 'Early-Access-Date').replace('Early Access Year', 'Early-Access-Year')
+        filter_cond = lambda c: str.isalpha(c)
+        expect_title = ''.join(filter(filter_cond, self.get_title_from_query(query).lower()))
+        got_title    = ''.join(filter(filter_cond, self.get_title_from_response(text).lower()))
 
         # 保存为文件
-        filename = self.output_path_prefix + '/advanced_query/{}.{}'.format(query[4:-1], file_postfix)
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        with open(filename, 'w', encoding='utf-8') as file:
-            file.write(text)
+        if expect_title == got_title:
+            filename = self.output_path_prefix + '/advanced_query/{}.{}'.format(qid, file_postfix)
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
+            with open(filename, 'w', encoding='utf-8') as file:
+                file.write(text)
+        else:
+            with open(self.error_log_file_path, 'a') as error_log:
+                error_log.write(f"Title not compatible: Expect '{expect_title}', but got '{got_title}'.\n")
+    
+    def get_title_from_response(self, response: str) -> str:
+        ti_pattern = '\nTI '
+        ti_index = response.find(ti_pattern)
+        text_title = ''
+        i = ti_index + len(ti_pattern)
+        while response[i] != '\n':
+            text_title = text_title + response[i]
+            i = i + 1
+        return text_title
+
+    def get_title_from_query(self, query: str) -> str:
+        return query[4:-1]

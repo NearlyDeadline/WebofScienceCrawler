@@ -3,3 +3,5 @@ output/*
 input
 __pycache__
 test
+error_log
+wosspider_error_log.txt
