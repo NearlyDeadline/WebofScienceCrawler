@@ -1,4 +1,5 @@
 .vscode
 output/*
-input/error.txt
+input
 __pycache__
+test
