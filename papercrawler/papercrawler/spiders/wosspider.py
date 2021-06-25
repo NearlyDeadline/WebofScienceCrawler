@@ -1,7 +1,7 @@
 '''
 Date: 2021-06-13 22:58:40
 LastEditors: Mike
-LastEditTime: 2021-06-24 10:01:06
+LastEditTime: 2021-06-25 22:43:09
 FilePath: \PaperCrawler\papercrawler\papercrawler\spiders\wosspider.py
 '''
 import scrapy
@@ -74,7 +74,7 @@ class WosAdvancedQuerySpider(scrapy.Spider):
 
     def parse(self, response):
         '''
-        @description: 提交高级搜索请求，将高级搜索请求返回给parse_result_entry处理
+        @description: 提交高级搜索请求
         '''
 
         pattern = re.compile(self.sid_pattern)
@@ -121,15 +121,13 @@ class WosAdvancedQuerySpider(scrapy.Spider):
                 "rs_sort_by": self.sort_by,
             }
 
-            # 将这一个高级搜索请求yield给parse_result_entry，内容为检索历史记录，包含检索结果的入口
-            # 同时通过meta参数为下一个处理函数传递sid、journal_name等有用信息
             yield FormRequest(adv_search_url, method='POST', formdata=query_form, dont_filter=True,
-                              callback=self.parse_result_entry,
+                              callback=self.parse_query_response,
                               meta={'sid': self.sid, 'query': q})
 
-    def parse_result_entry(self, response):
+    def parse_query_response(self, response):
         '''
-        @description: 找到高级检索结果入口链接，交给parse_results处理，同时还要记录下QID
+        @description: 找到高级检索结果入口链接，同时还要记录下QID
         '''
         sid = response.meta['sid']
         query = response.meta['query']
@@ -155,13 +153,12 @@ class WosAdvancedQuerySpider(scrapy.Spider):
                 print('qid提取失败')
                 exit(-1)
 
-            # yield一个Request给parse_result，让它去处理搜索结果页面，同时用meta传递有用参数
-            yield Request(entry_url, callback=self.parse_results,
+            yield Request(entry_url, callback=self.parse_download_link,
                           meta={'sid': sid, 'query': query, 'qid': qid})
         else:
             pass
 
-    def parse_results(self, response):
+    def parse_download_link(self, response):
         '''
         @description: 从搜索结果中选择需要下载哪些文献
         '''
@@ -206,13 +203,12 @@ class WosAdvancedQuerySpider(scrapy.Spider):
             "save_options": self.output_format
         }
 
-        # 将下载地址yield一个FormRequest给download_result函数，传递有用参数
         output_url = 'https://apps.webofknowledge.com/OutboundService.do?action=go&&'
         yield FormRequest(output_url, method='POST', formdata=output_form, dont_filter=True,
-                          callback=self.download_result,
+                          callback=self.download,
                           meta={'sid': sid, 'query': query, 'qid': qid})
 
-    def download_result(self, response):
+    def download(self, response):
         '''
         @description: 下载文献，并将下载的文献与query做对比，如果下载错了，就改为写入错误日志
         '''
