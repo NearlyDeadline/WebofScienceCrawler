@@ -1,7 +1,7 @@
 '''
 Date: 2021-06-13 22:58:40
 LastEditors: Mike
-LastEditTime: 2021-06-26 16:22:43
+LastEditTime: 2021-06-26 17:23:10
 FilePath: \PaperCrawler\papercrawler\papercrawler\spiders\wosspider.py
 '''
 import scrapy
@@ -191,7 +191,7 @@ class WosAdvancedQuerySpider(scrapy.Spider):
             "queryNatural": str(query),
             "count_new_items_marked": "0",
             "use_two_ets": "false",
-            "IncitesEntitled": "no",
+            "IncitesEntitled": "yes",
             "value(record_select_type)": "range",
             "markFrom": str(start),
             "markTo": str(end),
