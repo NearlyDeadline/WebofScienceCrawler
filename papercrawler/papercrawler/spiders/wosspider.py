@@ -1,7 +1,7 @@
 '''
 Date: 2021-06-13 22:58:40
 LastEditors: Mike
-LastEditTime: 2021-06-25 22:43:09
+LastEditTime: 2021-06-26 16:22:43
 FilePath: \PaperCrawler\papercrawler\papercrawler\spiders\wosspider.py
 '''
 import scrapy
@@ -59,11 +59,7 @@ class WosAdvancedQuerySpider(scrapy.Spider):
             sys.exit(-1)
 
         with open(query_file_path) as query_file:
-            for line in query_file.readlines():
-                line = line.strip('\n')
-                line = line[0:-1]  # 把最后的.去掉
-                if line is not None:
-                    self.query_list.append('TI=(' + line + ')')  # 加个括号，防止题目内的and等词语被视为布尔操作符
+            self.query_list = list((map(lambda line: 'TI=(' + line.strip('\n').strip('.') + ')', query_file.readlines())))
 
         if output_dir is None:
             print('请指定有效的输出路径')
